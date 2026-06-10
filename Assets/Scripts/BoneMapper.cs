@@ -14,7 +14,12 @@ public class BoneMapper : MonoBehaviour
     private Quaternion leftUpperArmInitRot,  rightUpperArmInitRot;
     private Quaternion leftForearmInitRot,   rightForearmInitRot;
 
+    [Header("Body Tracking")]
+    [SerializeField] bool  flipBodyY    = false; // Vision Y 軸が上下逆の場合に true
+    [SerializeField] float armSmoothing = 5f;    // 腕戻り速度（関節消失時）
+
     private bool _bodyLogged, _handLogged;
+    private int  _armDataFrames;
 
     // ── Initialize ────────────────────────────────────────────────────────
 
@@ -22,6 +27,8 @@ public class BoneMapper : MonoBehaviour
     {
         vrm      = instance;
         animator = instance.GetComponent<Animator>();
+        _bodyLogged = _handLogged = false;
+        _armDataFrames = 0;
         CaptureRest();
         CaptureArmRef(HumanBodyBones.LeftUpperArm,  HumanBodyBones.LeftLowerArm,
                       ref leftUpperArmRef,  ref leftUpperArmInitRot);
@@ -97,20 +104,42 @@ public class BoneMapper : MonoBehaviour
                      string fromKey, string toKey,
                      Vector3 refDir, Quaternion initRot, HumanBodyBones bone)
     {
-        if (!body.joints.TryGetValue(fromKey, out var f)) return;
-        if (!body.joints.TryGetValue(toKey,   out var t)) return;
-        if (f.confidence < 0.3f || t.confidence < 0.3f) return;
+        var bt = animator.GetBoneTransform(bone);
+        if (bt == null) return;
 
-        // Vision 座標: x 右増加, y 上増加 → そのままワールド XY 平面の方向として使用
+        // ジョイント未検出 → レスト姿勢にゆっくり戻す
+        if (!body.joints.TryGetValue(fromKey, out var f) ||
+            !body.joints.TryGetValue(toKey,   out var t) ||
+            f.confidence < 0.3f || t.confidence < 0.3f)
+        {
+            bt.rotation = Quaternion.Slerp(bt.rotation, initRot,
+                              Mathf.Min(1f, Time.deltaTime * armSmoothing));
+            return;
+        }
+
         float dx = t.x - f.x;
-        float dy = t.y - f.y;
+        // Vision の Y 軸: flipBodyY=false なら y 増加=上、true なら y 増加=下（前者が標準）
+        float dy = flipBodyY ? -(t.y - f.y) : (t.y - f.y);
         if (dx * dx + dy * dy < 1e-6f) return;
 
-        var desired = new Vector3(dx, dy, 0f).normalized;
-        var delta   = Quaternion.FromToRotation(refDir, desired);
+        // 腕ジョイント座標を最初の 10 フレームだけログ出力（座標系確認用）
+        if (_armDataFrames < 10)
+        {
+            _armDataFrames++;
+            Debug.Log($"[BoneMapper ARM] {bone}: " +
+                      $"({f.x:F3},{f.y:F3})→({t.x:F3},{t.y:F3}) dx={dx:F3} dy={dy:F3}");
+        }
 
-        var bt = animator.GetBoneTransform(bone);
-        if (bt != null) bt.rotation = delta * initRot;
+        // ワールド Z 軸まわりの角度ベース回転（XY 平面での腕上下）
+        // DeltaAngle(target, ref) = ref側に回すのに必要な角度（-180〜180）
+        float refAngle    = Mathf.Atan2(refDir.y, refDir.x) * Mathf.Rad2Deg;
+        float targetAngle = Mathf.Atan2(dy,       dx)       * Mathf.Rad2Deg;
+        float rotateAngle = Mathf.DeltaAngle(targetAngle, refAngle);
+
+        var target = Quaternion.AngleAxis(rotateAngle, Vector3.forward) * initRot;
+        // 即時追従（ジッター軽減のため小量だけ平滑化）
+        bt.rotation = Quaternion.Slerp(bt.rotation, target,
+                          Mathf.Min(1f, Time.deltaTime * 30f));
     }
 
     // ── 指 ───────────────────────────────────────────────────────────────
