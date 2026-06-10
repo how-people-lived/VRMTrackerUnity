@@ -1,0 +1,25 @@
+# Unity 生成キャッシュ
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# ビルド出力
+/[Bb]uild/
+/[Bb]uilds/
+*.app
+
+# IDE
+*.csproj
+*.sln
+*.unityproj
+*.suo
+*.user
+
+# macOS
+.DS_Store
+
+# その他
+*.tmp
+sysinfo.txt
