@@ -11,7 +11,8 @@ public class TrackingFrame
     public FaceData face;
     public HandData leftHand;
     public HandData rightHand;
-    public BodyData body;
+    public BodyData body;       // Vision 2D body pose (legacy fallback)
+    public Body3DData body3D;   // Vision 3D body pose (iOS 17+) — drives accurate arms
 }
 
 [Serializable]
@@ -47,6 +48,22 @@ public class HandData
 public class BodyData
 {
     public Dictionary<string, JointPoint> joints;
+}
+
+/// Vision VNDetectHumanBodyPose3DRequest joints (iOS 17+).
+/// Positions are in Vision's 3D model space (metres) relative to the body root.
+/// Any field may be null if that joint was not detected this frame.
+[Serializable]
+public class Body3DData
+{
+    public Vec3Data leftShoulder;
+    public Vec3Data leftElbow;
+    public Vec3Data leftWrist;
+    public Vec3Data rightShoulder;
+    public Vec3Data rightElbow;
+    public Vec3Data rightWrist;
+    public Vec3Data root;
+    public Vec3Data spine;
 }
 
 [Serializable]
