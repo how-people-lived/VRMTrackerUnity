@@ -9,11 +9,26 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using VRMTracker.Network;
+using VRMTracker.Avatar;
+using VRMTracker.CameraControl;
+using VRMTracker.UI;
 
 [InitializeOnLoad]
 static class ProjectAutoSetup
 {
-    const string DoneKey = "VRMTrackerSetupDone_v12";
+    const string DoneKey = "VRMTrackerSetupDone_v17";
+
+    // ── デザインパレット（ポートフォリオの世界観: ライト + グラス + 3色グラデ） ──
+    static Color Hex(int rgb) => new Color(((rgb >> 16) & 0xFF) / 255f,
+                                           ((rgb >> 8) & 0xFF) / 255f,
+                                           (rgb & 0xFF) / 255f, 1f);
+    static readonly Color cText      = Hex(0x111113);
+    static readonly Color cTextLight = Hex(0xC8C8D0);   // ダークバー上の淡色テキスト
+    static readonly Color cOrange    = Hex(0xFF5E00);
+    static readonly Color cBlue      = Hex(0x05D5FF);
+    static readonly Color cPurple    = Hex(0xA855F7);
+    static readonly Color cGlass     = new Color(0.11f, 0.11f, 0.12f, 0.94f);   // ダーク半透明バー（インスペクタと統一）
 
     static ProjectAutoSetup()
     {
@@ -42,7 +57,37 @@ static class ProjectAutoSetup
             return;
         }
         SetupURP();
+        EnsureUIToolkitAssets();
         BuildScene();
+    }
+
+    /// 左ドックインスペクタ用の PanelSettings（テーマ割当済み）を生成。
+    /// 実行時に Resources から読み込むことで「No Theme Style Sheet」警告を回避する。
+    public static void EnsureUIToolkitAssets()
+    {
+        const string themePath = "Assets/Resources/UI/UnityDefaultRuntimeTheme.tss";
+        const string psPath    = "Assets/Resources/UI/InspectorPanelSettings.asset";
+
+        var theme = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.ThemeStyleSheet>(themePath);
+        if (theme == null)
+        {
+            Debug.LogWarning($"[ProjectAutoSetup] UITK テーマが見つかりません: {themePath}");
+            return;
+        }
+
+        var ps = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.PanelSettings>(psPath);
+        if (ps == null)
+        {
+            ps = ScriptableObject.CreateInstance<UnityEngine.UIElements.PanelSettings>();
+            ps.themeStyleSheet = theme;   // 生成時にテーマを割当（警告回避）
+            AssetDatabase.CreateAsset(ps, psPath);
+        }
+        ps.themeStyleSheet = theme;
+        ps.scaleMode       = UnityEngine.UIElements.PanelScaleMode.ConstantPixelSize;
+        ps.sortingOrder    = 10;          // uGUI バーより前面
+        EditorUtility.SetDirty(ps);
+        AssetDatabase.SaveAssets();
+        Debug.Log("[ProjectAutoSetup] ✓ UI Toolkit PanelSettings 準備完了");
     }
 
     static void SetupURP()
@@ -134,6 +179,17 @@ static class ProjectAutoSetup
         camUrpData.renderType = CameraRenderType.Base;
         camGO.AddComponent<CameraController>();
 
+        // 背景画像用クアッド（カメラの子・アバターより奥・初期非表示）
+        var bgQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        bgQuad.name = "BackgroundQuad";
+        UnityEngine.Object.DestroyImmediate(bgQuad.GetComponent<Collider>());
+        bgQuad.transform.SetParent(camGO.transform, false);
+        bgQuad.transform.localPosition = new Vector3(0, 0, 12f);
+        bgQuad.transform.localRotation = Quaternion.identity;
+        bgQuad.transform.localScale    = new Vector3(16, 9, 1);
+        bgQuad.GetComponent<MeshRenderer>().sharedMaterial = BgMaterial();
+        bgQuad.SetActive(false);
+
         // ── ライト（カメラが +Z 側 yaw=180° → 顔は +Z を向く → ライトは -Z 方向に照射） ──
         RenderSettings.ambientMode  = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.30f, 0.30f, 0.30f);
@@ -190,72 +246,38 @@ static class ProjectAutoSetup
         scaler.matchWidthOrHeight  = 0.5f;
         canvasGO.AddComponent<GraphicRaycaster>();
 
-        // ── Hint panel（VRM 未読み込み時のガイド） ────────────────────────
-        var hintPanelGO = MakeFullRect(canvasGO, "HintPanel",
-            new Vector2(0, 58), new Vector2(0, -44),
-            new Color(0.06f, 0.06f, 0.06f, 0.88f));
+        const float topH = 54f;
 
-        MakeText(hintPanelGO, "HintTitle",
-            "アバター未読み込み",
-            new Vector2(0, 32), new Vector2(700, 42),
-            new Vector2(0.5f, 0.5f), TextAnchor.MiddleCenter, 24);
+        // uGUI クローム（上バー・アクセント・ヒント）をまとめる領域。
+        // 実行時に AvatarController が左端をインスペクタ幅ぶん右へ寄せ、
+        // 左のインスペクタと右の表示エリアが重ならないようにする（ボタンが隠れて押せなくなる問題の解消）。
+        var chromeGO = new GameObject("Chrome", typeof(RectTransform));
+        var chromeRT = chromeGO.GetComponent<RectTransform>();
+        chromeRT.SetParent(canvasGO.transform, false);
+        chromeRT.anchorMin = Vector2.zero; chromeRT.anchorMax = Vector2.one;
+        chromeRT.offsetMin = Vector2.zero; chromeRT.offsetMax = Vector2.zero;
 
-        var hintSub = MakeText(hintPanelGO, "HintSub",
-            "下の「VRM を開く」ボタンからファイルを選択してください",
-            new Vector2(0, -18), new Vector2(700, 28),
-            new Vector2(0.5f, 0.5f), TextAnchor.MiddleCenter, 14);
-        hintSub.GetComponent<Text>().color = new Color(0.75f, 0.75f, 0.75f, 0.7f);
+        // ── 上バーのみ（下バーは廃止し操作はすべてインスペクタへ集約） ──────
+        var topPanel = MakePanel(chromeGO, new Vector2(0, 1), new Vector2(1, 1),
+            new Vector2(0, -topH), new Vector2(0, 0), cGlass, rounded: false);
 
-        // ── Top panel（ステータス + 接続） ────────────────────────────────
-        var topPanel = MakePanel(canvasGO, new Vector2(0, 1), new Vector2(1, 1),
-            new Vector2(0, -44), new Vector2(0, 0),
-            new Color(0f, 0f, 0f, 0.55f));
+        // 3色グラデーションのアクセントライン（上バー下端）
+        MakeGradientLine(chromeGO, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -topH - 3), new Vector2(0, -topH));
 
+        // ── 上バー：ステータス + FPS + 接続 ───────────────────────────────
         var statusGO = MakeText(topPanel, "StatusLabel",
-            "「VRM を開く」でファイルを選択してください",
-            new Vector2(12, 0), new Vector2(760, 28),
-            new Vector2(0, 0.5f), TextAnchor.MiddleLeft, 14);
+            "左のインスペクタから VRM を読み込んでください",
+            new Vector2(18, 0), new Vector2(300, 24),
+            new Vector2(0, 0.5f), TextAnchor.MiddleLeft, 13, cTextLight);
+
+        var fpsGO = MakeText(topPanel, "FPSLabel", "0 fps",
+            new Vector2(330, 0), new Vector2(180, 24),
+            new Vector2(0, 0.5f), TextAnchor.MiddleLeft, 12, cTextLight);
 
         var connGO = MakeText(topPanel, "ConnectionLabel",
-            "UDP :12345  待機中",
-            new Vector2(-12, 0), new Vector2(280, 28),
-            new Vector2(1, 0.5f), TextAnchor.MiddleRight, 13);
-        connGO.GetComponent<Text>().color = new Color(0.5f, 0.9f, 0.5f);
-
-        // ── Bottom panel（コントロール群） ────────────────────────────────
-        var bottomPanel = MakePanel(canvasGO, new Vector2(0, 0), new Vector2(1, 0),
-            new Vector2(0, 0), new Vector2(0, 58),
-            new Color(0f, 0f, 0f, 0.55f));
-
-        // VRM を開くボタン（ボタン参照だけ保存 → リスナーは AvatarController.Start() で登録）
-        var loadBtnGO = MakeButton(bottomPanel, "LoadButton", "VRM を開く",
-            new Vector2(10, 0), new Vector2(130, 38), new Vector2(0, 0.5f));
-
-        // 背景色ボタン
-        var bgBlackBtnGO = MakeButton(bottomPanel, "BgBlackButton", "黒",
-            new Vector2(152, 0), new Vector2(48, 28), new Vector2(0, 0.5f));
-        bgBlackBtnGO.GetComponent<Image>().color = new Color(0.12f, 0.12f, 0.12f, 0.95f);
-
-        var bgWhiteBtnGO = MakeButton(bottomPanel, "BgWhiteButton", "白",
-            new Vector2(208, 0), new Vector2(48, 28), new Vector2(0, 0.5f));
-        bgWhiteBtnGO.GetComponent<Image>().color = new Color(0.88f, 0.88f, 0.88f, 0.95f);
-        bgWhiteBtnGO.GetComponentInChildren<Text>().color = new Color(0.12f, 0.12f, 0.12f);
-
-        var bgGreenBtnGO = MakeButton(bottomPanel, "BgGreenButton", "緑キー",
-            new Vector2(264, 0), new Vector2(68, 28), new Vector2(0, 0.5f));
-        bgGreenBtnGO.GetComponent<Image>().color = new Color(0.05f, 0.75f, 0.22f, 0.95f);
-
-        // FPS ラベル
-        var fpsGO = MakeText(bottomPanel, "FPSLabel",
-            "0 fps",
-            new Vector2(-232, 0), new Vector2(80, 24),
-            new Vector2(1, 0.5f), TextAnchor.MiddleRight, 12);
-        fpsGO.GetComponent<Text>().color = new Color(0.6f, 0.6f, 0.6f);
-
-        // パス入力フィールド（フォールバック）
-        var pathInput = MakeInputField(bottomPanel, "PathInputField",
-            "パスを入力 → Enter",
-            new Vector2(-10, 0), new Vector2(220, 32), new Vector2(1, 0.5f));
+            "UDP :49983  待機中",
+            new Vector2(-18, 0), new Vector2(300, 24),
+            new Vector2(1, 0.5f), TextAnchor.MiddleRight, 13, cTextLight);
 
         // ── EventSystem（forceModuleActive で確実に動作） ─────────────────
         var eventSysGO = new GameObject("EventSystem");
@@ -268,13 +290,9 @@ static class ProjectAutoSetup
         soUi.FindProperty("statusLabel").objectReferenceValue     = statusGO.GetComponent<Text>();
         soUi.FindProperty("connectionLabel").objectReferenceValue = connGO.GetComponent<Text>();
         soUi.FindProperty("fpsLabel").objectReferenceValue        = fpsGO.GetComponent<Text>();
-        soUi.FindProperty("pathInputField").objectReferenceValue  = pathInput.GetComponent<InputField>();
-        soUi.FindProperty("hintPanel").objectReferenceValue       = hintPanelGO;
         soUi.FindProperty("cameraController").objectReferenceValue = camGO.GetComponent<CameraController>();
-        soUi.FindProperty("loadButton").objectReferenceValue      = loadBtnGO.GetComponent<Button>();
-        soUi.FindProperty("bgBlackButton").objectReferenceValue   = bgBlackBtnGO.GetComponent<Button>();
-        soUi.FindProperty("bgWhiteButton").objectReferenceValue   = bgWhiteBtnGO.GetComponent<Button>();
-        soUi.FindProperty("bgGreenButton").objectReferenceValue   = bgGreenBtnGO.GetComponent<Button>();
+        soUi.FindProperty("bgQuad").objectReferenceValue          = bgQuad;
+        soUi.FindProperty("uiChrome").objectReferenceValue        = chromeRT;
         soUi.ApplyModifiedPropertiesWithoutUndo();
 
         // ── シーン保存 ─────────────────────────────────────────────────────
@@ -284,9 +302,9 @@ static class ProjectAutoSetup
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(scenePath, true) };
 
         EditorPrefs.SetBool(DoneKey, true);
-        Debug.Log("[ProjectAutoSetup] ✓ シーン作成完了 v7: " + scenePath);
+        Debug.Log("[ProjectAutoSetup] ✓ シーン作成完了 (v17): " + scenePath);
         EditorUtility.DisplayDialog("セットアップ完了",
-            "Assets/Scenes/Main.unity を作成しました（v5）。\n\n" +
+            "Assets/Scenes/Main.unity を作成しました。\n\n" +
             "▶ Play ボタンで動作確認できます。", "OK");
     }
 
@@ -300,38 +318,96 @@ static class ProjectAutoSetup
         return f;
     }
 
-    static GameObject MakeFullRect(GameObject parent, string name,
-                                    Vector2 offsetMin, Vector2 offsetMax, Color color)
+    // 角丸スプライト（Unity 組み込み UISprite の 9-slice）。エディタでは ExtraResource から取得。
+    static Sprite _rounded; static bool _roundedTried;
+    static Sprite RoundedSprite()
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = offsetMin;
-        rt.offsetMax = offsetMax;
-        go.AddComponent<Image>().color         = color;
-        go.GetComponent<Image>().raycastTarget = false;
-        return go;
+        if (_roundedTried) return _rounded;
+        _roundedTried = true;
+        _rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        return _rounded;   // 取得失敗時は null → 角なし矩形にフォールバック
+    }
+
+    // 3色グラデーション Texture を生成してアセット化（RawImage で確実に表示。Sprite 取込の不確実性を回避）
+    static Texture2D _accentTex;
+    static Texture2D AccentTexture()
+    {
+        if (_accentTex != null) return _accentTex;
+        const string path = "Assets/UI/AccentGradient.png";
+
+        Directory.CreateDirectory(Path.Combine(Application.dataPath, "UI"));
+        int w = 256, h = 8;
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        for (int x = 0; x < w; x++)
+        {
+            float t = x / (float)(w - 1);
+            Color c = t < 0.5f ? Color.Lerp(cOrange, cPurple, t / 0.5f)
+                               : Color.Lerp(cPurple, cBlue, (t - 0.5f) / 0.5f);
+            for (int y = 0; y < h; y++) tex.SetPixel(x, y, c);
+        }
+        tex.Apply();
+        File.WriteAllBytes(path, tex.EncodeToPNG());
+        UnityEngine.Object.DestroyImmediate(tex);
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+        if (AssetImporter.GetAtPath(path) is TextureImporter imp)
+        {
+            imp.textureType = TextureImporterType.Default;
+            imp.wrapMode    = TextureWrapMode.Clamp;
+            imp.SaveAndReimport();
+        }
+        _accentTex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        return _accentTex;
+    }
+
+    // 背景画像用の URP/Unlit マテリアル（両面表示）をアセット化
+    static Material BgMaterial()
+    {
+        const string path = "Assets/UI/Background.mat";
+        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (m != null) return m;
+        var sh = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Texture");
+        m = new Material(sh);
+        if (m.HasProperty("_Cull")) m.SetFloat("_Cull", 0f);   // 両面表示
+        Directory.CreateDirectory(Path.Combine(Application.dataPath, "UI"));
+        AssetDatabase.CreateAsset(m, path);
+        AssetDatabase.SaveAssets();
+        return m;
     }
 
     static GameObject MakePanel(GameObject parent, Vector2 anchorMin, Vector2 anchorMax,
-                                  Vector2 offsetMin, Vector2 offsetMax, Color color)
+                                Vector2 offsetMin, Vector2 offsetMax, Color color, bool rounded)
     {
         var go = new GameObject("Panel");
         go.transform.SetParent(parent.transform, false);
         var rt = go.AddComponent<RectTransform>();
         rt.anchorMin = anchorMin; rt.anchorMax = anchorMax;
         rt.offsetMin = offsetMin; rt.offsetMax = offsetMax;
-        var img            = go.AddComponent<Image>();
-        img.color          = color;
-        img.raycastTarget  = false;
+        var img = go.AddComponent<Image>();
+        img.color = color;
+        img.raycastTarget = false;
+        var rs = RoundedSprite();
+        if (rounded && rs != null) { img.sprite = rs; img.type = Image.Type.Sliced; }
+        return go;
+    }
+
+    static GameObject MakeGradientLine(GameObject parent, Vector2 anchorMin, Vector2 anchorMax,
+                                       Vector2 offsetMin, Vector2 offsetMax)
+    {
+        var go = new GameObject("GradientLine");
+        go.transform.SetParent(parent.transform, false);
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = anchorMin; rt.anchorMax = anchorMax;
+        rt.offsetMin = offsetMin; rt.offsetMax = offsetMax;
+        var img = go.AddComponent<RawImage>();
+        img.texture = AccentTexture();
+        img.raycastTarget = false;
         return go;
     }
 
     static GameObject MakeText(GameObject parent, string name, string text,
-                                 Vector2 anchoredPos, Vector2 size,
-                                 Vector2 anchor, TextAnchor alignment, int fontSize)
+                               Vector2 anchoredPos, Vector2 size,
+                               Vector2 anchor, TextAnchor alignment, int fontSize,
+                               Color color, bool bold = true)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent.transform, false);
@@ -339,92 +415,16 @@ static class ProjectAutoSetup
         rt.anchorMin = anchor; rt.anchorMax = anchor; rt.pivot = anchor;
         rt.sizeDelta = size; rt.anchoredPosition = anchoredPos;
         var t = go.AddComponent<Text>();
-        t.text      = text;
-        t.font      = GetFont();
-        t.fontSize  = fontSize;
-        t.color     = Color.white;
-        t.alignment = alignment;
-        var sh = go.AddComponent<Shadow>();
-        sh.effectColor    = new Color(0, 0, 0, 0.7f);
-        sh.effectDistance = new Vector2(1, -1);
+        t.text = text; t.font = GetFont(); t.fontSize = fontSize;
+        t.color = color; t.alignment = alignment;
+        t.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
+        t.horizontalOverflow = HorizontalWrapMode.Overflow;
+        t.verticalOverflow   = VerticalWrapMode.Overflow;
         return go;
     }
 
-    static GameObject MakeInputField(GameObject parent, string name, string placeholder,
-                                      Vector2 anchoredPos, Vector2 size, Vector2 anchor)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = anchor; rt.anchorMax = anchor; rt.pivot = anchor;
-        rt.sizeDelta = size; rt.anchoredPosition = anchoredPos;
-        go.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
-
-        var txtGO = new GameObject("Text");
-        txtGO.transform.SetParent(go.transform, false);
-        var trt = txtGO.AddComponent<RectTransform>();
-        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
-        trt.offsetMin = new Vector2(6, 2); trt.offsetMax = new Vector2(-6, -2);
-        var txt = txtGO.AddComponent<Text>();
-        txt.font = GetFont(); txt.fontSize = 12;
-        txt.color = Color.white; txt.alignment = TextAnchor.MiddleLeft;
-
-        var phGO = new GameObject("Placeholder");
-        phGO.transform.SetParent(go.transform, false);
-        var phrt = phGO.AddComponent<RectTransform>();
-        phrt.anchorMin = Vector2.zero; phrt.anchorMax = Vector2.one;
-        phrt.offsetMin = new Vector2(6, 2); phrt.offsetMax = new Vector2(-6, -2);
-        var phTxt = phGO.AddComponent<Text>();
-        phTxt.text = placeholder; phTxt.font = GetFont(); phTxt.fontSize = 12;
-        phTxt.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-        phTxt.alignment = TextAnchor.MiddleLeft; phTxt.fontStyle = FontStyle.Italic;
-
-        var field = go.AddComponent<InputField>();
-        field.textComponent  = txt;
-        field.placeholder    = phTxt;
-        field.characterLimit = 512;
-        return go;
-    }
-
-    static GameObject MakeButton(GameObject parent, string name, string label,
-                                   Vector2 anchoredPos, Vector2 size, Vector2 anchor)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = anchor; rt.anchorMax = anchor; rt.pivot = anchor;
-        rt.sizeDelta = size; rt.anchoredPosition = anchoredPos;
-        go.AddComponent<Image>().color = new Color(0.18f, 0.42f, 0.88f, 0.92f);
-        go.AddComponent<Button>();
-
-        var lblGO = new GameObject("Label");
-        lblGO.transform.SetParent(go.transform, false);
-        var lrt = lblGO.AddComponent<RectTransform>();
-        lrt.anchorMin = Vector2.zero; lrt.anchorMax = Vector2.one;
-        lrt.sizeDelta = Vector2.zero; lrt.anchoredPosition = Vector2.zero;
-        var t = lblGO.AddComponent<Text>();
-        t.text = label; t.font = GetFont();
-        t.fontSize = 14; t.color = Color.white; t.alignment = TextAnchor.MiddleCenter;
-        return go;
-    }
-
-    [MenuItem("VRMTracker/macOS ビルド")]
-    public static void BuildMacOS()
-    {
-        EnsureScene();
-        string outPath = Path.Combine(
-            Directory.GetParent(Application.dataPath).FullName,
-            "Build/macOS/VRMTracker.app");
-        var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
-        {
-            scenes       = new[] { "Assets/Scenes/Main.unity" },
-            locationPathName = outPath,
-            target       = BuildTarget.StandaloneOSX,
-            options      = BuildOptions.None,
-        });
-        if (report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
-            Debug.Log($"[ProjectAutoSetup] ✓ ビルド完了: {outPath}");
-        else
-            Debug.LogError($"[ProjectAutoSetup] ✗ ビルド失敗: {report.summary.result}");
-    }
+    // 注: 旧UIヘルパー（MakeButton / MakeInputField / MakeGradientMark）は、
+    // 操作系をインスペクタ(UI Toolkit)へ集約した際に不要になったため削除。
+    // 残る uGUI ヘルパーは GetFont / RoundedSprite / AccentTexture / BgMaterial /
+    // MakePanel / MakeGradientLine / MakeText。ビルドは BuildScript が唯一の入口。
 }

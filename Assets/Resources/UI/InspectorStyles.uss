@@ -1,0 +1,153 @@
+/* VRM Tracker — 左ドックインスペクタ（ダーク／macOS 風） */
+
+.inspector-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 360px;
+    background-color: rgb(28, 28, 30);          /* #1C1C1E */
+    border-right-width: 1px;
+    border-right-color: rgb(58, 58, 62);
+}
+
+/* 接続ステータスのヘッダ（ドット＋テキスト＝ピル） */
+.status-header {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgb(38, 38, 42);
+    border-radius: 9px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    margin-bottom: 4px;
+}
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: rgb(120, 120, 128);
+    margin-right: 9px;
+}
+.status-text {
+    color: rgb(235, 235, 240);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+/* Foldout（折りたたみセクション）＝上に区切り線を引いてグループ感を出す */
+.unity-foldout {
+    margin-top: 8px;
+    margin-bottom: 0;
+    border-top-width: 1px;
+    border-top-color: rgb(44, 44, 48);
+    padding-top: 10px;
+}
+.unity-foldout__toggle { margin-left: 0; margin-right: 0; }
+.unity-foldout__toggle > .unity-toggle__input > .unity-label,
+.unity-foldout__toggle .unity-label {
+    color: rgb(245, 245, 247);
+    font-size: 14px;
+    -unity-font-style: bold;
+}
+.unity-foldout__content {
+    margin-left: 2px;
+    margin-top: 4px;
+}
+
+.scroll-content {
+    padding-left: 16px;
+    padding-right: 14px;
+    padding-top: 14px;
+    padding-bottom: 24px;
+}
+
+.muted {
+    color: rgb(162, 162, 170);
+    font-size: 12px;
+    margin-bottom: 2px;
+    white-space: normal;
+}
+
+.value-strong {
+    color: rgb(255, 255, 255);
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 1px;
+}
+
+/* ボタン（macOS 風の角丸） */
+.btn {
+    height: 32px;
+    background-color: rgb(58, 58, 60);          /* #3A3A3C */
+    color: rgb(245, 245, 247);
+    border-width: 0;
+    border-radius: 7px;
+    margin: 3px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 13px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    transition-duration: 0.08s;
+    transition-property: background-color;
+}
+.btn:hover  { background-color: rgb(78, 78, 82); }
+.btn:active { background-color: rgb(94, 94, 100); }
+
+/* プライマリ（macOS デフォルトボタン風の青） */
+.btn-primary {
+    background-color: rgb(10, 132, 255);        /* #0A84FF */
+    height: 36px;
+}
+.btn-primary:hover  { background-color: rgb(56, 158, 255); }
+.btn-primary:active { background-color: rgb(0, 110, 230); }
+
+/* 選択中のボタン（表情・モーション等） */
+.btn-active         { background-color: rgb(10, 132, 255); }
+.btn-active:hover   { background-color: rgb(56, 158, 255); }
+
+/* 横並び */
+.row { flex-direction: row; flex-wrap: wrap; }
+.row > .btn { flex-grow: 1; flex-basis: 0; }
+
+/* コントロールパッド */
+.pad-row { flex-direction: row; justify-content: center; }
+.pad-btn { width: 56px; height: 34px; flex-grow: 0; }
+
+/* スライダー */
+.slider-label {
+    color: rgb(162, 162, 170);
+    font-size: 12px;
+    margin-top: 6px;
+}
+.unity-slider { margin-left: 3px; margin-right: 3px; margin-bottom: 2px; }
+.unity-base-slider__tracker { background-color: rgb(64, 64, 70); border-width: 0; }
+.unity-base-slider__dragger { background-color: rgb(245, 245, 247); border-width: 0; border-radius: 8px; }
+
+/* トグル */
+.unity-toggle { margin-top: 4px; margin-bottom: 4px; }
+.unity-toggle .unity-label { color: rgb(228, 228, 234); font-size: 12px; }
+
+/* テキスト入力（iFacialMocap の iPhone IP など） */
+.unity-text-field { margin-top: 4px; margin-bottom: 4px; }
+.unity-text-field .unity-label { color: rgb(228, 228, 234); font-size: 12px; min-width: 64px; }
+.unity-text-field .unity-base-text-field__input {
+    background-color: rgb(58, 58, 60);
+    border-width: 0;
+    border-radius: 6px;
+    color: rgb(245, 245, 247);
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+/* フッターのヒント */
+.hint {
+    color: rgb(120, 120, 128);
+    font-size: 11px;
+    margin-top: 18px;
+    white-space: normal;
+}

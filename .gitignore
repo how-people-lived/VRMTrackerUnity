@@ -23,3 +23,7 @@
 # その他
 *.tmp
 sysinfo.txt
+
+# Apple 製ヒラギノフォントは再配布不可のため除外（未同梱時は OS 動的フォントにフォールバック）
+/Assets/Resources/HiraginoSansW8.ttc
+/Assets/Resources/HiraginoSansW8.ttc.meta
